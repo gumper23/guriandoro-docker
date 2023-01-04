@@ -19,11 +19,16 @@ if [ "${UP_OR_DOWN}" != "up" ] && [ "${UP_OR_DOWN}" != "down" ]; then
   exit 1
 fi
 
+DOCKER_COMPOSE='docker-compose'
+if command -v docker-compose-v1 &>/dev/null; then
+    DOCKER_COMPOSE='docker-compose-v1'
+fi
+
 NAME=$(set_docker_compose_project_name .env)
 
 if [ "${UP_OR_DOWN}" == "down" ]; then
   echo "Stopping containers and cleaning up..."
-  docker-compose down
+  ${DOCKER_COMPOSE} down
 
   echo "Deleting run_* scripts..."
   rm -f run_bash_* run_mysql_* run_inspect_* run_logs_*
@@ -39,14 +44,19 @@ EXEC_MASTER="docker exec ${MASTER_NODE} mysql -uroot -proot -e "
 EXEC_SLAVE01="docker exec ${SLAVE01_NODE} mysql -uroot -proot -e "
 EXEC_SLAVE02="docker exec ${SLAVE02_NODE} mysql -uroot -proot -e "
 
-sed -i "s/report-host=\".*\"/report-host=\"${MASTER_NODE}\"/" cnf_files/my.cnf.master
-sed -i "s/report-host=\".*\"/report-host=\"${SLAVE01_NODE}\"/" cnf_files/my.cnf.slave01
-sed -i "s/report-host=\".*\"/report-host=\"${SLAVE02_NODE}\"/" cnf_files/my.cnf.slave02
+SED='sed'
+if command -v gsed &>/dev/null; then
+    SED='gsed'
+fi
 
-docker-compose up -d
+${SED} -i "s/report-host=\".*\"/report-host=\"${MASTER_NODE}\"/" cnf_files/my.cnf.master
+${SED} -i "s/report-host=\".*\"/report-host=\"${SLAVE01_NODE}\"/" cnf_files/my.cnf.slave01
+${SED} -i "s/report-host=\".*\"/report-host=\"${SLAVE02_NODE}\"/" cnf_files/my.cnf.slave02
+
+${DOCKER_COMPOSE} up -d
 
 echo "---> Waiting for master node to be up..."
-check_mysql_online ${MASTER_NODE}
+check_mysql_online "${MASTER_NODE}"
 
 echo "---> Creating repl user in master"
 ${EXEC_MASTER} "CREATE USER 'repl'@'%' IDENTIFIED BY 'repl'" 2>&1 | grep -v "Using a password"
@@ -55,7 +65,7 @@ ${EXEC_MASTER} "GRANT REPLICATION SLAVE ON *.* TO 'repl'@'%'" 2>&1 | grep -v "Us
 echo "---> Setting up slaves"
 
 echo "---> Waiting for slave01 to be up..."
-check_mysql_online ${SLAVE01_NODE}
+check_mysql_online "${SLAVE01_NODE}"
 
 ${EXEC_SLAVE01} "CHANGE MASTER TO MASTER_HOST='${MASTER_NODE}', \
 MASTER_USER='repl', MASTER_PASSWORD='repl', \
@@ -64,7 +74,7 @@ MASTER_LOG_FILE='mysql-bin.000003', MASTER_LOG_POS=154" 2>&1 | grep -v "Using a 
 ${EXEC_SLAVE01} "START SLAVE" 2>&1 | grep -v "Using a password"
 
 echo "---> Waiting for slave02 to be up..."
-check_mysql_online ${SLAVE02_NODE}
+check_mysql_online "${SLAVE02_NODE}"
 
 ${EXEC_SLAVE02} "CHANGE MASTER TO MASTER_HOST='${MASTER_NODE}', \
 MASTER_USER='repl', MASTER_PASSWORD='repl', \
@@ -75,19 +85,19 @@ ${EXEC_SLAVE02} "START SLAVE" 2>&1 | grep -v "Using a password"
 echo
 echo "Use the following commands to access BASH, MySQL, docker inspect and logs -f on each node:"
 echo
-for CONTAINER in `docker-compose ps|grep Up|grep -v etcd|grep -v proxysql|awk '{print $1}'`; do
+for CONTAINER in $(${DOCKER_COMPOSE} ps|grep Up|grep -v etcd|grep -v proxysql|awk '{print $1}'); do
   echo "run_bash_${CONTAINER}"
-  create_script run_bash_${CONTAINER} "docker exec -it ${CONTAINER} bash"
+  create_script run_bash_"${CONTAINER}" "docker exec -it ${CONTAINER} bash"
   echo "run_mysql_${CONTAINER}"
-  create_script run_mysql_${CONTAINER} "docker exec -it ${CONTAINER} mysql -uroot -proot \"\$@\""
+  create_script run_mysql_"${CONTAINER}" "docker exec -it ${CONTAINER} mysql -uroot -proot \"\$@\""
   echo "run_inspect_${CONTAINER}"
-  create_script run_inspect_${CONTAINER} "docker inspect ${CONTAINER}"
+  create_script run_inspect_"${CONTAINER}" "docker inspect ${CONTAINER}"
   echo "run_logs_${CONTAINER}"
-  create_script run_logs_${CONTAINER} "docker logs -f ${CONTAINER}"
+  create_script run_logs_"${CONTAINER}" "docker logs -f ${CONTAINER}"
   echo
 done;
 
 chmod +x run_*_*
-docker-compose ps
+${DOCKER_COMPOSE} ps
 
 exit 0
