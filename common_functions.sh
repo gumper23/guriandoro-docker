@@ -23,9 +23,11 @@ function create_script {
 
   # DANGER! will overwrite existing file, if any
   echo "#!/bin/bash" > "${SCRIPT_NAME}"
-  echo "" >> "${SCRIPT_NAME}"
-  echo "${SCRIPT_CONTENT}" >>  "${SCRIPT_NAME}"
-  echo "" >> "${SCRIPT_NAME}"
+  {
+      echo ""
+      echo "${SCRIPT_CONTENT}"
+      echo ""
+  } >> "${SCRIPT_NAME}"
 }
 
 function check_mysql_online {
